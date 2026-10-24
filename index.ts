@@ -5,8 +5,7 @@
  * id and name are the profile *name* (e.g. "claude-opus-4-7") rather than its ARN. Requests are
  * delegated to pi's built-in Bedrock Converse implementation with the id swapped for the ARN.
  *
- * Config: the `bedrockInferenceProfiles` key in the global pi settings (~/.pi/agent/settings.json),
- * falling back to `config.json` next to this file (see config.example.json). Keys:
+ * Config: the `bedrockInferenceProfiles` key in the global pi settings (~/.pi/agent/settings.json). Keys:
  *   aws_profile  AWS profile used for listing profiles and for inference (falls back to $AWS_PROFILE; no env var needed when set)
  *   region       Optional region (falls back to the profile's region, $AWS_REGION, then us-east-1)
  */
@@ -54,15 +53,10 @@ function readJson(file: string): Record<string, unknown> {
 	}
 }
 
-/** Global pi settings (`<agentDir>/settings.json`, key "bedrockInferenceProfiles") win over the local config.json. */
+/** Config lives in the global pi settings (`<agentDir>/settings.json`, key "bedrockInferenceProfiles"). */
 function loadConfig(): Config {
 	const agentDir = process.env.PI_CODING_AGENT_DIR || join(homedir(), ".pi", "agent");
-	const global = (readJson(join(agentDir, "settings.json")).bedrockInferenceProfiles ?? {}) as Config;
-	const local = readJson(join(here, "config.json")) as Config;
-	return {
-		aws_profile: global.aws_profile ?? local.aws_profile,
-		region: global.region ?? local.region,
-	};
+	return (readJson(join(agentDir, "settings.json")).bedrockInferenceProfiles ?? {}) as Config;
 }
 
 async function aws(args: string[], profile: string | undefined, signal?: AbortSignal): Promise<string> {
