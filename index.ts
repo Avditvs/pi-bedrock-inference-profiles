@@ -170,6 +170,7 @@ function streamProfile(
 	};
 	const inner = bedrockConverseStreamApi().streamSimple({ ...model, id: arn }, context, {
 		...options,
+		apiKey: undefined, // the registered key is a placeholder; auth comes from the AWS profile
 		profile: profileOf(config),
 		region: arn.split(":")[3] || config.region,
 	} as SimpleStreamOptions);
