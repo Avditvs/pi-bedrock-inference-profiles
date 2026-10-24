@@ -5,12 +5,14 @@
  * id and name are the profile *name* (e.g. "claude-opus-4-7") rather than its ARN. Requests are
  * delegated to pi's built-in Bedrock Converse implementation with the id swapped for the ARN.
  *
- * Config (`config.json` next to this file, see config.example.json):
- *   aws_profile  AWS profile used for listing profiles and for inference (falls back to $AWS_PROFILE)
+ * Config: the `bedrockInferenceProfiles` key in the global pi settings (~/.pi/agent/settings.json),
+ * falling back to `config.json` next to this file (see config.example.json). Keys:
+ *   aws_profile  AWS profile used for listing profiles and for inference (falls back to $AWS_PROFILE; no env var needed when set)
  *   region       Optional region (falls back to the profile's region, $AWS_REGION, then us-east-1)
  */
 import { execFile } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -43,19 +45,30 @@ interface ProfileSummary {
 
 const here = dirname(fileURLToPath(import.meta.url));
 
-function loadConfig(): Config {
-	const file = join(here, "config.json");
+function readJson(file: string): Record<string, unknown> {
 	if (!existsSync(file)) return {};
 	try {
-		return JSON.parse(readFileSync(file, "utf8")) as Config;
+		return JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>;
 	} catch (error) {
 		throw new Error(`Invalid ${file}: ${error instanceof Error ? error.message : String(error)}`);
 	}
 }
 
+/** Global pi settings (`<agentDir>/settings.json`, key "bedrockInferenceProfiles") win over the local config.json. */
+function loadConfig(): Config {
+	const agentDir = process.env.PI_CODING_AGENT_DIR || join(homedir(), ".pi", "agent");
+	const global = (readJson(join(agentDir, "settings.json")).bedrockInferenceProfiles ?? {}) as Config;
+	const local = readJson(join(here, "config.json")) as Config;
+	return {
+		aws_profile: global.aws_profile ?? local.aws_profile,
+		region: global.region ?? local.region,
+	};
+}
+
 async function aws(args: string[], profile: string | undefined, signal?: AbortSignal): Promise<string> {
 	const full = profile ? [...args, "--profile", profile] : args;
-	const { stdout } = await execFileAsync("aws", full, { signal, maxBuffer: 32 * 1024 * 1024 });
+	const env = profile ? { ...process.env, AWS_PROFILE: profile } : process.env;
+	const { stdout } = await execFileAsync("aws", full, { signal, env, maxBuffer: 32 * 1024 * 1024 });
 	return stdout;
 }
 
@@ -163,6 +176,7 @@ function streamProfile(
 	if (!arn) return errorStream(model, `Unknown inference profile "${model.id}". Re-open /model to refresh the list.`);
 
 	const config = loadConfig();
+	const awsProfile = profileOf(config);
 	const stream = createAssistantMessageEventStream();
 	// Keep the friendly name in recorded messages instead of the ARN.
 	const rename = (m: { model?: string } | undefined) => {
@@ -171,7 +185,9 @@ function streamProfile(
 	const inner = bedrockConverseStreamApi().streamSimple({ ...model, id: arn }, context, {
 		...options,
 		apiKey: undefined, // the registered key is a placeholder; auth comes from the AWS profile
-		profile: profileOf(config),
+		profile: awsProfile,
+		// Scope AWS_PROFILE to this request so the config value is used without exporting it in the shell.
+		env: awsProfile ? { ...(options as { env?: Record<string, string> } | undefined)?.env, AWS_PROFILE: awsProfile } : (options as { env?: Record<string, string> } | undefined)?.env,
 		region: arn.split(":")[3] || config.region,
 	} as SimpleStreamOptions);
 

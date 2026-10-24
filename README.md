@@ -6,6 +6,17 @@ Pi extension that registers a `bedrock-profiles` provider listing your AWS Bedro
 ## Setup
 
 ```sh
+```
+
+Preferred: add to the global `~/.pi/agent/settings.json`:
+
+```json
+"bedrockInferenceProfiles": { "aws_profile": "my-aws-profile", "region": "eu-west-1" }
+```
+
+Fallback (used for keys missing from global settings):
+
+```sh
 cp config.example.json config.json   # then edit
 ```
 
